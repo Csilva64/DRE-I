@@ -1,4 +1,5 @@
-import { useState, useCallback, type ReactNode } from 'react';
+import { useState, useCallback, useEffect, type ReactNode } from 'react';
+import { Routes, Route, useNavigate, Navigate } from 'react-router-dom';
 import {
   TrendingUp,
   TrendingDown,
@@ -8,7 +9,14 @@ import {
   ShoppingCart,
   BarChart2,
   AlertCircle,
+  Settings,
+  LogOut,
 } from 'lucide-react';
+import { useAuth } from './contexts/AuthContext';
+import { useTenant } from './contexts/TenantContext';
+import { isSupabaseConfigured } from './lib/supabase';
+import LoginPage from './pages/LoginPage';
+import SettingsPage from './pages/SettingsPage';
 import {
   BarChart,
   Bar,
@@ -87,10 +95,23 @@ function useBankData() {
   return { data, error, loading, importFile, clear };
 }
 
-export default function App() {
+function Dashboard() {
   const { data, error, loading, importFile, clear } = useBankData();
+  const { tenant } = useTenant();
+  const { session, loading: authLoading, signOut } = useAuth();
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<'overview' | 'transacoes'>('overview');
   const [txSearch, setTxSearch] = useState('');
+
+  // Apply tenant CSS variables
+  useEffect(() => {
+    document.documentElement.style.setProperty('--color-primary', tenant.primaryColor);
+    document.documentElement.style.setProperty('--color-accent', tenant.accentColor);
+  }, [tenant.primaryColor, tenant.accentColor]);
+
+  if (isSupabaseConfigured && authLoading) {
+    return <div className="min-h-screen bg-slate-50 flex items-center justify-center"><Spinner /></div>;
+  }
 
   async function handleFiles(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files ?? []);
@@ -103,15 +124,20 @@ export default function App() {
       {/* Header */}
       <header className="sticky top-0 z-10 bg-white/90 backdrop-blur-md border-b border-slate-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center gap-4">
-          <div>
-            <h1 className="text-xl font-bold tracking-tight text-slate-900">
-              DRE<span className="text-orange-600">INSIGHT</span>
-            </h1>
-            <p className="text-xs text-slate-500">
-              {data
-                ? `${data.transactions.length} transações · ${data.byMonth.length} meses · ${data.sources.length} conta${data.sources.length !== 1 ? 's' : ''}`
-                : 'Nenhum extrato carregado'}
-            </p>
+          <div className="flex items-center gap-3">
+            {tenant.logoUrl && (
+              <img src={tenant.logoUrl} alt="logo" className="w-8 h-8 object-contain rounded" />
+            )}
+            <div>
+              <h1 className="text-xl font-bold tracking-tight text-slate-900" style={{ color: tenant.primaryColor }}>
+                {tenant.companyName || 'DREINSIGHT'}
+              </h1>
+              <p className="text-xs text-slate-500">
+                {data
+                  ? `${data.transactions.length} transações · ${data.byMonth.length} meses · ${data.sources.length} conta${data.sources.length !== 1 ? 's' : ''}`
+                  : 'Nenhum extrato carregado'}
+              </p>
+            </div>
           </div>
           <div className="flex items-center gap-2">
             {data && (
@@ -122,15 +148,19 @@ export default function App() {
                     onClick={() => setActiveTab(tab)}
                     className={cn(
                       'px-3 py-1.5 text-sm font-semibold rounded-lg transition-all',
-                      activeTab === tab ? 'bg-white text-orange-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                      activeTab === tab ? 'bg-white shadow-sm' : 'text-slate-500 hover:text-slate-700'
                     )}
+                    style={activeTab === tab ? { color: tenant.primaryColor } : undefined}
                   >
                     {tab === 'overview' ? 'Visão Geral' : 'Transações'}
                   </button>
                 ))}
               </div>
             )}
-            <label className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-orange-500 text-white text-sm font-semibold cursor-pointer hover:bg-orange-600 transition-colors">
+            <label
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-white text-sm font-semibold cursor-pointer transition-colors"
+              style={{ background: tenant.primaryColor }}
+            >
               <Upload className="w-4 h-4" />
               {data ? 'Adicionar Extrato' : 'Carregar Extrato'}
               <input type="file" accept=".csv,.xlsx,.xls,text/csv" multiple className="hidden" onChange={handleFiles} />
@@ -141,6 +171,22 @@ export default function App() {
                 className="px-3 py-2 text-sm text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
               >
                 Limpar
+              </button>
+            )}
+            <button
+              onClick={() => navigate('/settings')}
+              title="Configurações"
+              className="p-2 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-all"
+            >
+              <Settings className="w-4 h-4" />
+            </button>
+            {session && (
+              <button
+                onClick={signOut}
+                title="Sair"
+                className="p-2 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 transition-all"
+              >
+                <LogOut className="w-4 h-4" />
               </button>
             )}
           </div>
@@ -342,11 +388,31 @@ export default function App() {
   );
 }
 
+export default function App() {
+  const { session, loading } = useAuth();
+
+  if (isSupabaseConfigured && loading) {
+    return <div className="min-h-screen bg-slate-50 flex items-center justify-center"><Spinner /></div>;
+  }
+
+  return (
+    <Routes>
+      <Route path="/login" element={
+        isSupabaseConfigured && session ? <Navigate to="/" replace /> : <LoginPage />
+      } />
+      <Route path="/settings" element={
+        isSupabaseConfigured && !session ? <Navigate to="/login" replace /> : <SettingsPage />
+      } />
+      <Route path="/*" element={
+        isSupabaseConfigured && !session ? <Navigate to="/login" replace /> : <Dashboard />
+      } />
+    </Routes>
+  );
+}
+
 function Spinner() {
   return (
-    <div className="min-h-screen bg-[#f8fafc] flex items-center justify-center">
-      <span className="w-8 h-8 border-2 border-orange-200 border-t-orange-500 rounded-full animate-spin" />
-    </div>
+    <span className="w-8 h-8 border-2 border-orange-200 border-t-orange-500 rounded-full animate-spin" />
   );
 }
 

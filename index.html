@@ -7,6 +7,19 @@
   </head>
   <body>
     <div id="root"></div>
+    <div id="crash" style="display:none;padding:32px;font-family:monospace;color:#dc2626"></div>
+    <script>
+      window.onerror = function(msg, src, line, col, err) {
+        var el = document.getElementById('crash');
+        el.style.display = 'block';
+        el.innerHTML = '<h2>JS Error</h2><pre>' + (err ? err.stack : msg) + '</pre>';
+      };
+      window.onunhandledrejection = function(e) {
+        var el = document.getElementById('crash');
+        el.style.display = 'block';
+        el.innerHTML = '<h2>Unhandled Promise</h2><pre>' + e.reason + '</pre>';
+      };
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

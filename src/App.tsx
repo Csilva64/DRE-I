@@ -11,6 +11,7 @@ import {
   AlertCircle,
   Settings,
   LogOut,
+  Lock,
 } from 'lucide-react';
 import { useAuth } from './contexts/AuthContext';
 import { useTenant } from './contexts/TenantContext';
@@ -32,6 +33,7 @@ import {
   parseTransactionsFromCSV,
   parseTransactionsFromExcel,
   parseTransactionsFromPDF,
+  PDFPasswordError,
   buildDashboard,
   mergeTransactions,
   type BankDashboard,
@@ -57,8 +59,19 @@ function useBankData() {
   });
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [passwordRequest, setPasswordRequest] = useState<{ file: File; wrong: boolean } | null>(null);
 
-  const importFile = useCallback(async (file: File) => {
+  const commitTransactions = useCallback((incoming: ReturnType<typeof parseTransactionsFromCSV>) => {
+    if (incoming.length === 0) throw new Error('Nenhuma transação encontrada no arquivo.');
+    setTransactions(prev => {
+      const merged = mergeTransactions(prev, incoming);
+      saveTransactions(merged);
+      setData(buildDashboard(merged));
+      return merged;
+    });
+  }, []);
+
+  const importFile = useCallback(async (file: File, password?: string) => {
     setLoading(true);
     setError(null);
     try {
@@ -70,37 +83,37 @@ function useBankData() {
         const buf = await file.arrayBuffer();
         incoming = parseTransactionsFromExcel(buf, source);
       } else if (isPDF) {
-        incoming = await parseTransactionsFromPDF(file, source);
+        incoming = await parseTransactionsFromPDF(file, source, password);
       } else {
         const text = await file.text();
         incoming = parseTransactionsFromCSV(text, source);
       }
-      if (incoming.length === 0) throw new Error('Nenhuma transação encontrada no arquivo.');
-      setTransactions(prev => {
-        const merged = mergeTransactions(prev, incoming);
-        saveTransactions(merged);
-        setData(buildDashboard(merged));
-        return merged;
-      });
+      setPasswordRequest(null);
+      commitTransactions(incoming);
     } catch (e: any) {
-      setError(e.message ?? 'Erro ao processar arquivo.');
+      if (e instanceof PDFPasswordError) {
+        setPasswordRequest({ file, wrong: e.isWrong });
+      } else {
+        setError(e.message ?? 'Erro ao processar arquivo.');
+      }
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [commitTransactions]);
 
   const clear = useCallback(() => {
     clearTransactions();
     setTransactions([]);
     setData(null);
     setError(null);
+    setPasswordRequest(null);
   }, []);
 
-  return { data, error, loading, importFile, clear };
+  return { data, error, loading, importFile, clear, passwordRequest, setPasswordRequest };
 }
 
 function Dashboard() {
-  const { data, error, loading, importFile, clear } = useBankData();
+  const { data, error, loading, importFile, clear, passwordRequest, setPasswordRequest } = useBankData();
   const { tenant } = useTenant();
   const { session, loading: authLoading, signOut } = useAuth();
   const navigate = useNavigate();
@@ -388,6 +401,15 @@ function Dashboard() {
       <footer className="max-w-7xl mx-auto px-4 py-8 text-center text-xs text-slate-400 border-t border-slate-200 mt-8">
         DRE-I OPCO · Powered by OPCO AI
       </footer>
+
+      {passwordRequest && (
+        <PDFPasswordModal
+          fileName={passwordRequest.file.name}
+          wrongPassword={passwordRequest.wrong}
+          onSubmit={pwd => importFile(passwordRequest.file, pwd)}
+          onCancel={() => setPasswordRequest(null)}
+        />
+      )}
     </div>
   );
 }
@@ -411,6 +433,64 @@ export default function App() {
         isSupabaseConfigured && !session ? <Navigate to="/login" replace /> : <Dashboard />
       } />
     </Routes>
+  );
+}
+
+function PDFPasswordModal({
+  fileName,
+  wrongPassword,
+  onSubmit,
+  onCancel,
+}: {
+  fileName: string;
+  wrongPassword: boolean;
+  onSubmit: (pwd: string) => void;
+  onCancel: () => void;
+}) {
+  const [pwd, setPwd] = useState('');
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4">
+        <div className="flex items-center gap-3">
+          <div className="p-2 bg-orange-50 rounded-lg">
+            <Lock className="w-5 h-5 text-orange-500" />
+          </div>
+          <div>
+            <h2 className="font-bold text-slate-900 text-sm">PDF protegido por senha</h2>
+            <p className="text-xs text-slate-500 truncate max-w-[220px]">{fileName}</p>
+          </div>
+        </div>
+        {wrongPassword && (
+          <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+            Senha incorreta. Tente novamente.
+          </p>
+        )}
+        <input
+          type="password"
+          autoFocus
+          placeholder="Digite a senha do PDF"
+          value={pwd}
+          onChange={e => setPwd(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && pwd && onSubmit(pwd)}
+          className="w-full px-3 py-2.5 text-sm border border-slate-200 rounded-xl outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+        />
+        <div className="flex gap-3">
+          <button
+            onClick={onCancel}
+            className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-600 font-semibold text-sm hover:bg-slate-50 transition-colors"
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={() => pwd && onSubmit(pwd)}
+            disabled={!pwd}
+            className="flex-1 py-2.5 rounded-xl bg-orange-500 text-white font-bold text-sm hover:bg-orange-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            Abrir PDF
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 

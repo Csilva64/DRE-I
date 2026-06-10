@@ -188,7 +188,14 @@ export function mergeTransactions(existing: Transaction[], incoming: Transaction
   return [...existing, ...deduped];
 }
 
-export async function parseTransactionsFromPDF(file: File, source = 'extrato'): Promise<Transaction[]> {
+export class PDFPasswordError extends Error {
+  constructor(public readonly isWrong: boolean) {
+    super(isWrong ? 'Senha incorreta.' : 'PDF protegido por senha.')
+    this.name = 'PDFPasswordError'
+  }
+}
+
+export async function parseTransactionsFromPDF(file: File, source = 'extrato', password?: string): Promise<Transaction[]> {
   const { getDocument, GlobalWorkerOptions } = await import('pdfjs-dist')
   GlobalWorkerOptions.workerSrc = new URL(
     'pdfjs-dist/build/pdf.worker.min.mjs',
@@ -196,7 +203,16 @@ export async function parseTransactionsFromPDF(file: File, source = 'extrato'): 
   ).toString()
 
   const buffer = await file.arrayBuffer()
-  const pdf = await getDocument({ data: buffer }).promise
+  let pdf: any
+  try {
+    pdf = await getDocument({ data: buffer, password: password ?? '' }).promise
+  } catch (err: any) {
+    if (err?.name === 'PasswordException') {
+      // code 1 = need password, code 2 = wrong password
+      throw new PDFPasswordError(err.code === 2)
+    }
+    throw err
+  }
   const lines: string[] = []
 
   for (let i = 1; i <= pdf.numPages; i++) {

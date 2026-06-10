@@ -1,31 +1,27 @@
-import type { BankDashboard } from './csvParser';
+import type { Transaction } from './csvParser';
 
-const KEY = 'bank_dashboard_v1';
+const KEY = 'bank_transactions_v2';
 
-export function saveDashboard(data: BankDashboard): void {
+export function saveTransactions(txs: Transaction[]): void {
   try {
-    localStorage.setItem(KEY, JSON.stringify(data));
+    localStorage.setItem(KEY, JSON.stringify(txs));
   } catch {
     // storage full — ignore
   }
 }
 
-export function loadDashboard(): BankDashboard | null {
+export function loadTransactions(): Transaction[] {
   try {
     const raw = localStorage.getItem(KEY);
-    if (!raw) return null;
+    if (!raw) return [];
     const parsed = JSON.parse(raw);
-    // Rehydrate Date objects
-    parsed.transactions = parsed.transactions.map((t: any) => ({
-      ...t,
-      date: new Date(t.date),
-    }));
-    return parsed as BankDashboard;
+    return parsed.map((t: any) => ({ ...t, date: new Date(t.date) }));
   } catch {
-    return null;
+    return [];
   }
 }
 
-export function clearDashboard(): void {
+export function clearTransactions(): void {
   localStorage.removeItem(KEY);
+  localStorage.removeItem('bank_dashboard_v1');
 }

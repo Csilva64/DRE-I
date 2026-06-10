@@ -20,8 +20,14 @@ import {
   Legend,
 } from 'recharts';
 import { motion, AnimatePresence } from 'motion/react';
-import { parseNubankCSV, type BankDashboard } from './lib/csvParser';
-import { saveDashboard, loadDashboard, clearDashboard } from './lib/bankStore';
+import {
+  parseTransactionsFromCSV,
+  parseTransactionsFromExcel,
+  buildDashboard,
+  mergeTransactions,
+  type BankDashboard,
+} from './lib/csvParser';
+import { saveTransactions, loadTransactions, clearTransactions } from './lib/bankStore';
 import { cn } from './lib/utils';
 
 const COLORS = {
@@ -35,19 +41,35 @@ function formatCurrency(v: number) {
 }
 
 function useBankData() {
-  const [data, setData] = useState<BankDashboard | null>(() => loadDashboard());
+  const [transactions, setTransactions] = useState(() => loadTransactions());
+  const [data, setData] = useState<BankDashboard | null>(() => {
+    const txs = loadTransactions();
+    return txs.length > 0 ? buildDashboard(txs) : null;
+  });
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const importCSV = useCallback(async (file: File) => {
+  const importFile = useCallback(async (file: File) => {
     setLoading(true);
     setError(null);
     try {
-      const text = await file.text();
-      const parsed = parseNubankCSV(text);
-      if (parsed.transactions.length === 0) throw new Error('Nenhuma transação encontrada no arquivo.');
-      saveDashboard(parsed);
-      setData(parsed);
+      const source = file.name.replace(/\.[^.]+$/, '');
+      const isExcel = /\.(xlsx|xls)$/i.test(file.name);
+      let incoming;
+      if (isExcel) {
+        const buf = await file.arrayBuffer();
+        incoming = parseTransactionsFromExcel(buf, source);
+      } else {
+        const text = await file.text();
+        incoming = parseTransactionsFromCSV(text, source);
+      }
+      if (incoming.length === 0) throw new Error('Nenhuma transação encontrada no arquivo.');
+      setTransactions(prev => {
+        const merged = mergeTransactions(prev, incoming);
+        saveTransactions(merged);
+        setData(buildDashboard(merged));
+        return merged;
+      });
     } catch (e: any) {
       setError(e.message ?? 'Erro ao processar arquivo.');
     } finally {
@@ -56,22 +78,23 @@ function useBankData() {
   }, []);
 
   const clear = useCallback(() => {
-    clearDashboard();
+    clearTransactions();
+    setTransactions([]);
     setData(null);
     setError(null);
   }, []);
 
-  return { data, error, loading, importCSV, clear };
+  return { data, error, loading, importFile, clear };
 }
 
 export default function App() {
-  const { data, error, loading, importCSV, clear } = useBankData();
+  const { data, error, loading, importFile, clear } = useBankData();
   const [activeTab, setActiveTab] = useState<'overview' | 'transacoes'>('overview');
   const [txSearch, setTxSearch] = useState('');
 
-  function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
-    const f = e.target.files?.[0];
-    if (f) importCSV(f);
+  async function handleFiles(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? []);
+    for (const f of files) await importFile(f);
     e.target.value = '';
   }
 
@@ -86,7 +109,7 @@ export default function App() {
             </h1>
             <p className="text-xs text-slate-500">
               {data
-                ? `${data.transactions.length} transações · ${data.byMonth.length} meses`
+                ? `${data.transactions.length} transações · ${data.byMonth.length} meses · ${data.sources.length} conta${data.sources.length !== 1 ? 's' : ''}`
                 : 'Nenhum extrato carregado'}
             </p>
           </div>
@@ -109,8 +132,8 @@ export default function App() {
             )}
             <label className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-orange-500 text-white text-sm font-semibold cursor-pointer hover:bg-orange-600 transition-colors">
               <Upload className="w-4 h-4" />
-              {data ? 'Novo Extrato' : 'Carregar Extrato'}
-              <input type="file" accept=".csv,text/csv" className="hidden" onChange={handleFile} />
+              {data ? 'Adicionar Extrato' : 'Carregar Extrato'}
+              <input type="file" accept=".csv,.xlsx,.xls,text/csv" multiple className="hidden" onChange={handleFiles} />
             </label>
             {data && (
               <button
@@ -145,7 +168,7 @@ export default function App() {
 
         {/* Empty state */}
         {!data && !loading && (
-          <EmptyState onFile={handleFile} />
+          <EmptyState onFile={handleFiles} />
         )}
 
         {/* Dashboard */}
@@ -334,17 +357,17 @@ function EmptyState({ onFile }: { onFile: (e: React.ChangeEvent<HTMLInputElement
         <Upload className="w-8 h-8 text-orange-500" />
       </div>
       <div>
-        <h2 className="text-xl font-bold text-slate-800 mb-2">Carregue seu extrato bancário</h2>
+        <h2 className="text-xl font-bold text-slate-800 mb-2">Carregue seus extratos bancários</h2>
         <p className="text-slate-500 text-sm max-w-sm">
-          Importe um CSV do Nubank (ou formato similar) para visualizar Receita, Despesa, Resultado, Clientes e Fornecedores.
+          Importe um ou mais arquivos CSV ou Excel (Nubank e outros bancos). Múltiplas contas são consolidadas automaticamente.
         </p>
       </div>
       <label className="flex items-center gap-2 px-6 py-3 bg-orange-500 text-white font-bold rounded-xl cursor-pointer hover:bg-orange-600 transition-colors">
         <Upload className="w-5 h-5" />
-        Selecionar arquivo CSV
-        <input type="file" accept=".csv,text/csv" className="hidden" onChange={onFile} />
+        Selecionar arquivos
+        <input type="file" accept=".csv,.xlsx,.xls,text/csv" multiple className="hidden" onChange={onFile} />
       </label>
-      <p className="text-xs text-slate-400">Formato: Data, Valor, Identificador, Descrição</p>
+      <p className="text-xs text-slate-400">Aceita CSV e Excel · Nubank e outros bancos · múltiplas contas</p>
     </div>
   );
 }

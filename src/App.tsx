@@ -71,7 +71,7 @@ function useBankData() {
     });
   }, []);
 
-  const importFile = useCallback(async (file: File, password?: string) => {
+  const importFile = useCallback(async (file: File, password?: string): Promise<string | null> => {
     setLoading(true);
     setError(null);
     try {
@@ -90,12 +90,15 @@ function useBankData() {
       }
       setPasswordRequest(null);
       commitTransactions(incoming);
+      return null;
     } catch (e: any) {
       if (e instanceof PDFPasswordError) {
         setPasswordRequest({ file, wrong: e.isWrong });
-      } else {
-        setError(e.message ?? 'Erro ao processar arquivo.');
+        return null;
       }
+      const msg = e.message ?? 'Erro ao processar arquivo.';
+      setError(msg);
+      return msg;
     } finally {
       setLoading(false);
     }
@@ -109,11 +112,11 @@ function useBankData() {
     setPasswordRequest(null);
   }, []);
 
-  return { data, error, loading, importFile, clear, passwordRequest, setPasswordRequest };
+  return { data, error, loading, importFile, clear, passwordRequest, setPasswordRequest, setError };
 }
 
 function Dashboard() {
-  const { data, error, loading, importFile, clear, passwordRequest, setPasswordRequest } = useBankData();
+  const { data, error, loading, importFile, clear, passwordRequest, setPasswordRequest, setError } = useBankData();
   const { tenant } = useTenant();
   const { session, loading: authLoading, signOut } = useAuth();
   const navigate = useNavigate();
@@ -132,7 +135,14 @@ function Dashboard() {
 
   async function handleFiles(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files ?? []);
-    for (const f of files) await importFile(f);
+    const errors: string[] = [];
+    for (const f of files) {
+      const err = await importFile(f);
+      if (err) errors.push(`${f.name}: ${err}`);
+    }
+    if (errors.length > 1) {
+      setError(errors.join('\n'));
+    }
     e.target.value = '';
   }
 

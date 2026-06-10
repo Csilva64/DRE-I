@@ -214,37 +214,65 @@ export async function parseTransactionsFromPDF(file: File, source = 'extrato', p
     }
     throw err
   }
-  const lines: string[] = []
+  // Collect all text items across all pages with position info
+  interface TextItem { x: number; y: number; str: string }
+  const allItems: TextItem[] = []
 
   for (let i = 1; i <= pdf.numPages; i++) {
     const page = await pdf.getPage(i)
     const content = await page.getTextContent()
-    // Group items by approximate Y position to reconstruct rows
-    const byY = new Map<number, string[]>()
     for (const item of content.items as any[]) {
-      const y = Math.round(item.transform[5])
-      const arr = byY.get(y) ?? []
-      arr.push(item.str)
-      byY.set(y, arr)
-    }
-    // Sort by Y descending (top → bottom) then join each row
-    const sorted = [...byY.entries()].sort((a, b) => b[0] - a[0])
-    for (const [, parts] of sorted) {
-      lines.push(parts.join(' ').trim())
+      if (item.str?.trim()) {
+        allItems.push({ x: item.transform[4], y: item.transform[5], str: item.str })
+      }
     }
   }
 
+  // Group items into lines by Y proximity (±4px tolerance)
+  const lineGroups: TextItem[][] = []
+  for (const item of allItems) {
+    const existing = lineGroups.find(g => Math.abs(g[0].y - item.y) <= 4)
+    if (existing) existing.push(item)
+    else lineGroups.push([item])
+  }
+  // Sort each group left→right, then sort groups top→bottom
+  const lines = lineGroups
+    .map(g => g.sort((a, b) => a.x - b.x).map(i => i.str).join(' ').trim())
+    .filter(Boolean)
+
   const transactions: Transaction[] = []
-  // Match lines containing a date pattern DD/MM/YYYY or YYYY-MM-DD and a currency value
-  const dateValueRe = /(\d{2}\/\d{2}\/\d{4}|\d{4}-\d{2}-\d{2})\s+(.+?)\s+([-−]?\s*[\d.,]+(?:\.\d{2})?)\s*$/
+
+  // Patterns for Brazilian bank statement PDFs
+  const dateRe = /(\d{2}\/\d{2}\/\d{4}|\d{4}-\d{2}-\d{2})/
+  // Value: optional R$, optional minus/dash, digits with dots/commas
+  const valorRe = /([-−–]?\s*R?\$?\s*[\d.]+,\d{2})/g
 
   for (const line of lines) {
-    const m = line.match(dateValueRe)
-    if (!m) continue
-    const [, dateStr, descricao, rawValor] = m
-    const valorStr = rawValor.replace(/\s/g, '').replace('−', '-').replace(',', '.')
-    const idHash = `${dateStr}-${valorStr}-${descricao.slice(0, 20)}`
-    const tx = parseRow(dateStr, valorStr, idHash, descricao.trim(), source)
+    const dateMatch = line.match(dateRe)
+    if (!dateMatch) continue
+
+    const dateStr = dateMatch[1]
+    const valorMatches = [...line.matchAll(valorRe)]
+    if (valorMatches.length === 0) continue
+
+    // Take last value found on the line as the transaction amount
+    const rawValor = valorMatches[valorMatches.length - 1][1]
+    const valorStr = rawValor
+      .replace(/\s/g, '')
+      .replace('R$', '')
+      .replace('$', '')
+      .replace('−', '-')
+      .replace('–', '-')
+      .replace(/\./g, '')   // remove thousands separator
+      .replace(',', '.')    // decimal comma → dot
+
+    // Description = everything between date and last value
+    const dateEnd = line.indexOf(dateStr) + dateStr.length
+    const valorStart = line.lastIndexOf(valorMatches[valorMatches.length - 1][1])
+    const descricao = line.slice(dateEnd, valorStart).trim().replace(/\s+/g, ' ') || line.trim()
+
+    const idHash = `${dateStr}::${valorStr}::${descricao.slice(0, 30)}`
+    const tx = parseRow(dateStr, valorStr, idHash, descricao, source)
     if (tx) transactions.push(tx)
   }
 

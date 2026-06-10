@@ -31,6 +31,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import {
   parseTransactionsFromCSV,
   parseTransactionsFromExcel,
+  parseTransactionsFromPDF,
   buildDashboard,
   mergeTransactions,
   type BankDashboard,
@@ -63,10 +64,13 @@ function useBankData() {
     try {
       const source = file.name.replace(/\.[^.]+$/, '');
       const isExcel = /\.(xlsx|xls)$/i.test(file.name);
+      const isPDF = /\.pdf$/i.test(file.name);
       let incoming;
       if (isExcel) {
         const buf = await file.arrayBuffer();
         incoming = parseTransactionsFromExcel(buf, source);
+      } else if (isPDF) {
+        incoming = await parseTransactionsFromPDF(file, source);
       } else {
         const text = await file.text();
         incoming = parseTransactionsFromCSV(text, source);
@@ -163,7 +167,7 @@ function Dashboard() {
             >
               <Upload className="w-4 h-4" />
               {data ? 'Adicionar Extrato' : 'Carregar Extrato'}
-              <input type="file" accept=".csv,.xlsx,.xls,text/csv" multiple className="hidden" onChange={handleFiles} />
+              <input type="file" accept=".csv,.xlsx,.xls,.pdf,text/csv,application/pdf" multiple className="hidden" onChange={handleFiles} />
             </label>
             {data && (
               <button
@@ -425,7 +429,7 @@ function EmptyState({ onFile }: { onFile: (e: React.ChangeEvent<HTMLInputElement
       <div>
         <h2 className="text-xl font-bold text-slate-800 mb-2">Carregue seus extratos bancários</h2>
         <p className="text-slate-500 text-sm max-w-sm">
-          Importe um ou mais arquivos CSV ou Excel (Nubank e outros bancos). Múltiplas contas são consolidadas automaticamente.
+          Importe CSV, Excel ou PDF (Nubank e outros bancos). Múltiplas contas são consolidadas automaticamente.
         </p>
       </div>
       <label className="flex items-center gap-2 px-6 py-3 bg-orange-500 text-white font-bold rounded-xl cursor-pointer hover:bg-orange-600 transition-colors">
@@ -433,7 +437,7 @@ function EmptyState({ onFile }: { onFile: (e: React.ChangeEvent<HTMLInputElement
         Selecionar arquivos
         <input type="file" accept=".csv,.xlsx,.xls,text/csv" multiple className="hidden" onChange={onFile} />
       </label>
-      <p className="text-xs text-slate-400">Aceita CSV e Excel · Nubank e outros bancos · múltiplas contas</p>
+      <p className="text-xs text-slate-400">Aceita CSV, Excel e PDF · Nubank e outros bancos · múltiplas contas</p>
     </div>
   );
 }

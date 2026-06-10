@@ -188,6 +188,52 @@ export function mergeTransactions(existing: Transaction[], incoming: Transaction
   return [...existing, ...deduped];
 }
 
+export async function parseTransactionsFromPDF(file: File, source = 'extrato'): Promise<Transaction[]> {
+  const { getDocument, GlobalWorkerOptions } = await import('pdfjs-dist')
+  GlobalWorkerOptions.workerSrc = new URL(
+    'pdfjs-dist/build/pdf.worker.min.mjs',
+    import.meta.url
+  ).toString()
+
+  const buffer = await file.arrayBuffer()
+  const pdf = await getDocument({ data: buffer }).promise
+  const lines: string[] = []
+
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i)
+    const content = await page.getTextContent()
+    // Group items by approximate Y position to reconstruct rows
+    const byY = new Map<number, string[]>()
+    for (const item of content.items as any[]) {
+      const y = Math.round(item.transform[5])
+      const arr = byY.get(y) ?? []
+      arr.push(item.str)
+      byY.set(y, arr)
+    }
+    // Sort by Y descending (top → bottom) then join each row
+    const sorted = [...byY.entries()].sort((a, b) => b[0] - a[0])
+    for (const [, parts] of sorted) {
+      lines.push(parts.join(' ').trim())
+    }
+  }
+
+  const transactions: Transaction[] = []
+  // Match lines containing a date pattern DD/MM/YYYY or YYYY-MM-DD and a currency value
+  const dateValueRe = /(\d{2}\/\d{2}\/\d{4}|\d{4}-\d{2}-\d{2})\s+(.+?)\s+([-−]?\s*[\d.,]+(?:\.\d{2})?)\s*$/
+
+  for (const line of lines) {
+    const m = line.match(dateValueRe)
+    if (!m) continue
+    const [, dateStr, descricao, rawValor] = m
+    const valorStr = rawValor.replace(/\s/g, '').replace('−', '-').replace(',', '.')
+    const idHash = `${dateStr}-${valorStr}-${descricao.slice(0, 20)}`
+    const tx = parseRow(dateStr, valorStr, idHash, descricao.trim(), source)
+    if (tx) transactions.push(tx)
+  }
+
+  return transactions
+}
+
 export function parseNubankCSV(csvText: string): BankDashboard {
   return buildDashboard(parseTransactionsFromCSV(csvText));
 }

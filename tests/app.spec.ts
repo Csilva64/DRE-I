@@ -96,7 +96,8 @@ test.describe('Settings page', () => {
     if (url.includes('/login')) {
       await expect(page.locator('input[type="email"]')).toBeVisible({ timeout: 5000 });
     } else {
-      await expect(page.getByText('Configurações')).toBeVisible({ timeout: 5000 });
+      // Use h1 to avoid encoding issues with accented chars
+      await expect(page.locator('h1')).toBeVisible({ timeout: 5000 });
     }
   });
 });

@@ -12,7 +12,7 @@ export interface TenantConfig {
 }
 
 const DEFAULT: TenantConfig = {
-  companyName: 'Minha Empresa',
+  companyName: 'DRE-Insight',
   primaryColor: '#f97316',
   accentColor: '#3b82f6',
   logoUrl: '',

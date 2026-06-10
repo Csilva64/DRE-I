@@ -297,13 +297,35 @@ export async function parseTransactionsFromPDF(file: File, source = 'extrato', p
     }
   }
 
-  // Debug: log first 20 lines to console so format issues can be diagnosed
-  if (transactions.length === 0) {
-    console.warn('[PDF parser] 0 transactions found. First 30 lines extracted:')
-    lines.slice(0, 30).forEach((l, i) => console.warn(`  [${i}] ${l}`))
-  }
-
   return transactions
+}
+
+/** Returns raw lines extracted from a PDF — for debugging format issues */
+export async function debugExtractPDFLines(file: File, password?: string): Promise<string[]> {
+  const { getDocument, GlobalWorkerOptions } = await import('pdfjs-dist')
+  GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url).toString()
+  const buffer = await file.arrayBuffer()
+  const pdf = await getDocument({ data: buffer, password: password ?? '' }).promise
+  interface TItem { x: number; y: number; page: number; str: string }
+  const allItems: TItem[] = []
+  for (let p = 1; p <= Math.min(pdf.numPages, 3); p++) {
+    const page = await pdf.getPage(p)
+    const content = await page.getTextContent()
+    for (const item of content.items as any[]) {
+      if (item.str?.trim()) allItems.push({ x: item.transform[4], y: item.transform[5], page: p, str: item.str })
+    }
+  }
+  allItems.sort((a, b) => a.page - b.page || b.y - a.y || a.x - b.x)
+  const lineMap = new Map<number, TItem[]>()
+  for (const item of allItems) {
+    const bucket = Math.round(item.y / 5) * 5
+    const arr = lineMap.get(bucket) ?? []; arr.push(item); lineMap.set(bucket, arr)
+  }
+  return [...lineMap.entries()]
+    .sort((a, b) => b[0] - a[0])
+    .map(([, items]) => items.sort((a, b) => a.x - b.x).map(i => i.str).join(' ').trim())
+    .filter(Boolean)
+    .slice(0, 80)
 }
 
 export function parseNubankCSV(csvText: string): BankDashboard {

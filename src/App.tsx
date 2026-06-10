@@ -12,6 +12,7 @@ import {
   Settings,
   LogOut,
   Lock,
+  X,
 } from 'lucide-react';
 import { useAuth } from './contexts/AuthContext';
 import { useTenant } from './contexts/TenantContext';
@@ -33,6 +34,7 @@ import {
   parseTransactionsFromCSV,
   parseTransactionsFromExcel,
   parseTransactionsFromPDF,
+  debugExtractPDFLines,
   PDFPasswordError,
   buildDashboard,
   mergeTransactions,
@@ -60,6 +62,7 @@ function useBankData() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [passwordRequest, setPasswordRequest] = useState<{ file: File; wrong: boolean } | null>(null);
+  const [pdfDebug, setPdfDebug] = useState<{ fileName: string; lines: string[] } | null>(null);
 
   const commitTransactions = useCallback((incoming: ReturnType<typeof parseTransactionsFromCSV>) => {
     if (incoming.length === 0) throw new Error('Nenhuma transação encontrada no arquivo.');
@@ -84,6 +87,10 @@ function useBankData() {
         incoming = parseTransactionsFromExcel(buf, source);
       } else if (isPDF) {
         incoming = await parseTransactionsFromPDF(file, source, password);
+        if (incoming.length < 5) {
+          const lines = await debugExtractPDFLines(file, password);
+          setPdfDebug({ fileName: file.name, lines });
+        }
       } else {
         const text = await file.text();
         incoming = parseTransactionsFromCSV(text, source);
@@ -112,11 +119,11 @@ function useBankData() {
     setPasswordRequest(null);
   }, []);
 
-  return { data, error, loading, importFile, clear, passwordRequest, setPasswordRequest, setError };
+  return { data, error, loading, importFile, clear, passwordRequest, setPasswordRequest, setError, pdfDebug, setPdfDebug };
 }
 
 function Dashboard() {
-  const { data, error, loading, importFile, clear, passwordRequest, setPasswordRequest, setError } = useBankData();
+  const { data, error, loading, importFile, clear, passwordRequest, setPasswordRequest, setError, pdfDebug, setPdfDebug } = useBankData();
   const { tenant } = useTenant();
   const { session, loading: authLoading, signOut } = useAuth();
   const navigate = useNavigate();
@@ -412,6 +419,14 @@ function Dashboard() {
         DRE-I OPCO · Powered by OPCO AI
       </footer>
 
+      {pdfDebug && (
+        <PDFDebugModal
+          fileName={pdfDebug.fileName}
+          lines={pdfDebug.lines}
+          onClose={() => setPdfDebug(null)}
+        />
+      )}
+
       {passwordRequest && (
         <PDFPasswordModal
           fileName={passwordRequest.file.name}
@@ -443,6 +458,43 @@ export default function App() {
         isSupabaseConfigured && !session ? <Navigate to="/login" replace /> : <Dashboard />
       } />
     </Routes>
+  );
+}
+
+function PDFDebugModal({ fileName, lines, onClose }: { fileName: string; lines: string[]; onClose: () => void }) {
+  const text = lines.join('\n');
+  const [copied, setCopied] = useState(false);
+  function copy() {
+    navigator.clipboard.writeText(text).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); });
+  }
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col">
+        <div className="flex items-center justify-between p-5 border-b border-slate-100">
+          <div>
+            <h2 className="font-bold text-slate-900 text-sm">Diagnóstico PDF — poucas transações encontradas</h2>
+            <p className="text-xs text-slate-500 truncate max-w-[400px] mt-0.5">{fileName}</p>
+          </div>
+          <button onClick={onClose} className="p-2 rounded-lg hover:bg-slate-100 text-slate-400">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+        <p className="px-5 pt-4 pb-2 text-xs text-slate-500">
+          Texto extraído do PDF (primeiras 3 páginas). Copie e envie para ajuste do parser:
+        </p>
+        <pre className="flex-1 overflow-y-auto mx-5 mb-4 p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-700 whitespace-pre-wrap font-mono leading-5">
+          {text || '(nenhum texto extraído — PDF pode ser imagem escaneada)'}
+        </pre>
+        <div className="flex gap-3 p-5 pt-0">
+          <button onClick={onClose} className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-600 font-semibold text-sm hover:bg-slate-50">
+            Fechar
+          </button>
+          <button onClick={copy} className="flex-1 py-2.5 rounded-xl bg-orange-500 text-white font-bold text-sm hover:bg-orange-600">
+            {copied ? 'Copiado!' : 'Copiar texto'}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 

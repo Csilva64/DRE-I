@@ -8,11 +8,11 @@ import { fetchBrandingBySlug } from '@/lib/tenant/branding'
 import { DEFAULT_BRANDING } from '@/lib/tenant'
 
 export const metadata: Metadata = {
-  title: 'DRE-I Painel',
-  description: 'DRE-I Painel',
+  title: 'DREINSIGHT',
+  description: 'DREINSIGHT - Painel Financeiro',
   openGraph: {
-    title: 'DRE-I Painel',
-    description: 'DRE-I Painel',
+    title: 'DREINSIGHT',
+    description: 'DREINSIGHT - Painel Financeiro',
     type: 'website',
   },
 }

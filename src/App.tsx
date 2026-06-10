@@ -89,7 +89,7 @@ export default function App() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center gap-4">
           <div>
             <h1 className="text-xl font-bold tracking-tight text-slate-900">
-              DRE-I · <span className="text-orange-600">OPCO</span>
+              DRE<span className="text-orange-600">INSIGHT</span>
             </h1>
             <p className="text-xs text-slate-500">
               {data

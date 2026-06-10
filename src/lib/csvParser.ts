@@ -181,10 +181,11 @@ export function buildDashboard(transactions: Transaction[]): BankDashboard {
   return { transactions, totalReceita, totalDespesa, resultado, byMonth, topClientes, topFornecedores, sources };
 }
 
-// Merge new transactions into existing, dedup by id
+// Merge new transactions into existing, dedup by source+id (prevents cross-account collisions)
 export function mergeTransactions(existing: Transaction[], incoming: Transaction[]): Transaction[] {
-  const seen = new Set(existing.map(t => t.id));
-  const deduped = incoming.filter(t => !seen.has(t.id));
+  const key = (t: Transaction) => `${t.source ?? ''}::${t.id}`;
+  const seen = new Set(existing.map(key));
+  const deduped = incoming.filter(t => !seen.has(key(t)));
   return [...existing, ...deduped];
 }
 

@@ -180,7 +180,7 @@ function Dashboard() {
             >
               <Upload className="w-4 h-4" />
               {data ? 'Adicionar Extrato' : 'Carregar Extrato'}
-              <input type="file" accept=".csv,.xlsx,.xls,.pdf,text/csv,application/pdf" multiple className="hidden" onChange={handleFiles} />
+              <input type="file" accept=".csv,.xlsx,.xls,.pdf" multiple className="hidden" onChange={handleFiles} />
             </label>
             {data && (
               <button

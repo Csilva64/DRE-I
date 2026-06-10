@@ -7,18 +7,19 @@ import { SubscriptionProvider } from '@/components/providers/SubscriptionProvide
 import { fetchBrandingBySlug } from '@/lib/tenant/branding'
 import { DEFAULT_BRANDING } from '@/lib/tenant'
 
-export const metadata: Metadata = {
-  title: 'DREINSIGHT',
-  description: 'DREINSIGHT - Painel Financeiro',
-  openGraph: {
-    title: 'DREINSIGHT',
+export async function generateMetadata(): Promise<Metadata> {
+  const headerList = await headers()
+  const tenantSlug = headerList.get('x-tenant-slug') ?? 'opco'
+  const branding = await fetchBrandingBySlug(tenantSlug)
+  const title = `${branding.companyName} · DREINSIGHT`
+  return {
+    title,
     description: 'DREINSIGHT - Painel Financeiro',
-    type: 'website',
-  },
+    openGraph: { title, description: 'DREINSIGHT - Painel Financeiro', type: 'website' },
+  }
 }
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
-  // Read tenant slug set by middleware
   const headerList = await headers()
   const tenantSlug = headerList.get('x-tenant-slug') ?? 'opco'
 
@@ -28,13 +29,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     <html lang={branding.locale}>
       <head>
         {branding.faviconUrl && <link rel="icon" href={branding.faviconUrl} />}
-        <title>{branding.companyName} · DRE-I</title>
-        <style>{`
-          :root {
-            --color-primary: ${branding.primaryColor};
-            --color-accent: ${branding.accentColor};
-          }
-        `}</style>
+        <style>{`:root{--color-primary:${branding.primaryColor};--color-accent:${branding.accentColor};}`}</style>
       </head>
       <body>
         <BrandingProvider branding={branding}>

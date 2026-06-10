@@ -4,14 +4,11 @@ import {
   TrendingDown,
   DollarSign,
   Upload,
-  LogOut,
   Users,
   ShoppingCart,
   BarChart2,
   AlertCircle,
 } from 'lucide-react';
-import { useAuth } from './contexts/AuthContext';
-import AuthForm from './components/AuthForm';
 import {
   BarChart,
   Bar,
@@ -68,13 +65,9 @@ function useBankData() {
 }
 
 export default function App() {
-  const { session, loading: authLoading, signOut } = useAuth();
   const { data, error, loading, importCSV, clear } = useBankData();
   const [activeTab, setActiveTab] = useState<'overview' | 'transacoes'>('overview');
   const [txSearch, setTxSearch] = useState('');
-
-  if (authLoading) return <Spinner />;
-  if (!session) return <AuthForm />;
 
   function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0];
@@ -127,13 +120,6 @@ export default function App() {
                 Limpar
               </button>
             )}
-            <button
-              onClick={signOut}
-              title="Sair"
-              className="p-2 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 transition-all"
-            >
-              <LogOut className="w-4 h-4" />
-            </button>
           </div>
         </div>
       </header>
